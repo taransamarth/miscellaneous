@@ -1,0 +1,99 @@
+---
+title: "Research Module 3"
+author: "Taran Samarth"
+date: "April 11, 2021"
+output:
+  pdf_document: default
+indent: yes
+fontsize: 11pt
+header-includes:
+- \usepackage{float}
+subtitle: PLSC 476
+---
+```{r setup, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = 'center')
+knitr::opts_chunk$set(out.width="80%",out.height = "80%")
+library(tidyverse)
+library(ggplot2)
+library(haven)
+library(stringr)
+library(stargazer)
+library(sjPlot)
+```
+
+```{r echo=FALSE}
+scdb <- read.csv("SCDB_justicecentered.csv")
+fjc<-read_xpt("http://epstein.wustl.edu/research/justicesdata.v8xpt")
+
+merged <- merge(scdb,fjc,by.x="justice",by.y="spaethid")
+
+merged <- merged %>% mutate(atty=ifelse(usasat1>999 | usat1>999|usago1>999|usag1>999|citat1>999|cdep1>999|cdis1>999|saag1>999|stag1>999,1,0),direction=direction-1,republican=ifelse(parnom==6,1,0),democrat=ifelse(parnom==1,1,0)) %>% drop_na(direction) %>% filter(democrat == 1 | republican == 1)
+
+# Subset criminal procedure, due process, union, and economic regulation cases
+
+crimProcCases <- merged %>% filter(issueArea == 1)
+
+dueProcCases <- merged %>% filter(issueArea == 4)
+
+nonCrimCases <- merged %>% filter(!(issueArea %in% c(1,4)))
+
+# Create logistic regression models using previous prosecutorial experience and partisanship as independent variables + liberal vote direction as dependent variable
+
+crimProcModel <- glm(direction ~ atty*democrat, family="binomial",data=crimProcCases)
+
+dueProcModel <- glm(direction ~ atty*democrat, family="binomial",data=dueProcCases)
+
+nonCrimModel <- glm(direction ~ atty*democrat, family="binomial",data=nonCrimCases)
+```
+
+## Theory and Hypotheses
+
+In my last research module, I explored the effect of prosecutorial experience on voting direction in criminal procedure and due process cases. Given that prosecutorial positions compose a significant part of the criminal legal system that potential SCOTUS justices often work their way through, I suspected that working as a prosecutor (arguing for stringent penalties against defendants and against defendants' rights) may impart a more conservative outlook upon future SCOTUS justices. As expected, I found that SCOTUS justices who previously worked as prosecutors tend to vote more conservatively than justices who never worked as prosecutors.
+
+  However, the voting pattern differences between justices with and without prosecutorial experience may also be partly explained by partisanship--after all, liberal justices would be expected to vote more liberally than conservative justices. Recognizing that my previous analysis did not investigate a variable that could significantly mediate voting direction, I investigate the relationship between prosecutorial experience, partisanship, and voting direction for Supreme Court justices in criminal procedure and due process cases. I expect that Democratic justices, on average, are more likely to vote to expand defendants' rights than Republican justices. However, I suspect that prosecutorial experience lowers liberal voting odds for justices in both parties, albeit with a more significant negative effect between Democratic justices with and without prosecutorial experience than their Republican counterparts.
+  
+## Data Sourcing and Manipulation
+
+  I combine two data sources: the Supreme Court Justices Database and the U.S. Supreme Court Judicial Database. The Justices Database provides biographical information about each Supreme Court justice, while the Judicial Database provides information about each case heard before the Court. The Judicial Database's Modern dataset covers cases from the 1946 term onwards, so only justices who served anytime between 1946 and 2019 are included in this analysis.
+  
+  To compile data on prosecutorial experience, I use the Justices Database to identify which Justices previously served in the following positions: U.S. Attorney, Assistant U.S. Attorney, U.S. Attorney General (or employed in the Office of the Attorney General), district or county attorney, assistant district or county attorney, city attorney, state attorney general, and state assistant attorney general. The Justices Database includes variables for the first year in which Justices served in each position (evaluated as 999, if they never served in that office). The independent variable `atty` was then coded as 1 for all Justices who had a non-999 entry for any of those variables (and coded as 0 otherwise). The independent variable `democrat` were then coded as 1 if the Justice was a member of the Democratic party at time of nomination (and coded as 0 if a member of the Republican party). To simplify the analysis, the lone justice who was neither a Democrat nor a Republican in the dataset--independent Felix Frankfurter--was removed, such that all justices were Republicans or Democrats.
+  
+  For the dependent variable, the Judicial Database's `direction` variable is rescaled from [1 (conservative), 2 (liberal)] to a binary dummy variable [0 (conservative), 1 (liberal)]. "Liberal" votes are those cast in favor of defendants, indigents, or parties suing the government over violation of due process. Votes without a coded direction are excluded from the analysis.
+  
+## Analysis and Methods
+
+  Figure 1 shows the composition of the Court ($n$=37) since 1946 by prosecutorial experience and partisanship. While more Supreme Court justices have worked as prosecutors prior to confirmation than not, there are stark partisan differences--72.2% of Republican justices worked as prosecutors, compared to 47.4% of Democratic justices.
+
+```{r, echo=FALSE, message=FALSE, fig.cap="Justices by Prosecutorial Experience and Partisanship"}
+# Plot of justices by prosecutorial experience and partisanship
+
+merged %>% group_by(justice,atty,democrat,republican) %>% summarise(count=n_distinct(justice)) %>% group_by(atty,democrat,republican) %>% summarise(count=n()) %>% ggplot(aes(x=as.factor(democrat),y=round((count/sum(count))*100,2),fill=as.factor(atty))) + geom_bar(position="stack",stat="identity") + xlab("Partisan Identification") + ylab("% of SCOTUS Justices") + scale_x_discrete(labels=c("Republican","Democrat")) + scale_fill_discrete(name="Prosecutorial Experience",labels=c("None","Some"))
+```
+  
+  To analyze the relationship between prosecutorial experience, partisanship, and voting direction, I conduct a multivariate logistic regression across non-criminal-procedure and non-due-process cases as follows:
+  
+  $$\log \frac{P}{1-P} = \beta_0 + \beta_1(Prosecutorial Exp.) + \beta_2(Democrat) + \beta_3(Democrat)(Prosecutorial Exp.)$$
+  
+Alongside the main effects of partisanship and prosecutorial experience, I include an interaction effect to account for voting direction changes in Democratic justices with prosecutorial experience. I then repeat the same regression twice on our areas of interest: once on criminal procedure cases (issueArea = 1) and once on due process cases (issueArea = 4). 
+\newpage
+
+```{r echo=FALSE, warning=FALSE, results="asis"}
+stargazer(nonCrimModel, crimProcModel, dueProcModel,dep.var.labels = "Liberal Voting Direction", covariate.labels = c("Prosecutorial Experience", "Democrat", "Attorney x Democrat"), title="Logistic Regression Analysis of Voting Direction", column.labels=c("All Other Cases","Criminal Procedure", "Due Process"), header=FALSE)
+```
+
+Table 1 includes the regression coefficients for all three models as log-odds. For non-criminal-procedure and non-due-process cases, as expected, partisanship and prosecutorial experience each have significant relationships with voting direction. The log odds of casting a liberal vote are .678 higher for Democratic justices than Republican justices, while the log odds of casting a liberal vote are .177 lower for justices with prosecutorial experience than without prosecutorial experience. The interaction effect between partisanship and prosecutorial experience is also significant--the log odds for liberal voting direction are .185 lower for Democratic justices with prosecutorial experience than expected from the main effects for Democrats and former prosecutors alone.
+
+These effects are more pronounced when the same regression is conducted over cases relating to criminal procedure. While Democrats are significantly more likely to cast a liberal vote in criminal procedure cases with a log-odds increase of 1.164, former prosecutors are significantly less likely to cast a liberal vote with a log-odds decrease of .302. Democrats with prosecutorial experience are also less likely to cast a liberal vote on criminal procedure cases than fellow partisans without prosecutorial experience with a log-odds decrease of .698. 
+
+In general, the associations between prosecutorial experience/partisanship and liberal voting direction are stronger in criminal procedure cases than non-criminal-procedure and non-due-process cases, as is evident in Figure 2. In due process cases, Democrats are more likely to cast liberal votes and prosecutors are less likely to do the same, but, unlike criminal procedure cases, no significant interaction between prosecutorial experience and partisanship occurs.
+
+```{r echo=FALSE, fig.cap="Odds Ratios for Model Triad"}
+plot_models(crimProcModel,dueProcModel, nonCrimModel, axis.labels = rev(c("Prosecutorial Experience", "Democrat", "Pros. Exp. x Democrat")), m.labels = c("Criminal Procedure", "Due Process", "All Others"), legend.title = "Cases")
+```
+
+## Results
+
+Consistent with our original hypothesis, we find that Democratic justices are more likely to cast a liberal vote than Republican justices, while justices with prosecutorial experience are less likely to cast liberal votes than counterparts who have not worked as prosecutors. We also find an expected interaction between partisanship and prosecutorial experience, as Democrats with prosecutorial experience are less likely to cast liberal votes than Democrats without said experience in criminal procedure cases and non-criminal-procedure/non-due-process cases. However, we do not find evidence for the same interaction effect in due process cases. 
+
+Our analysis does show that partisanship and prosecutorial experience are significant predictors for voting direction in SCOTUS cases, especially in cases relating to defendants' rights and criminal law. Further analysis may benefit from substituting a binary prosecutorial experience variable with a continuous measure of years working as a prosecutor, as Justices who were prosecutors for most of their pre-Court careers may be more strongly influenced by their work history than, for example, Justices who only spent a short time in a district attorney's office.

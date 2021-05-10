@@ -1,0 +1,80 @@
+---
+title: "Research Module 4"
+author: "Taran Samarth"
+date: "April 11, 2021"
+output:
+  pdf_document: default
+indent: yes
+fontsize: 11pt
+header-includes:
+- \usepackage{float}
+subtitle: PLSC 476
+---
+
+```{r setup, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(fig.align = 'center')
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+library(tidyverse)
+library(ggplot2)
+library(haven)
+library(readxl)
+```
+
+```{r}
+retention <- read_xlsx("RetentionDataset.xlsx")
+
+excl <- c("Illinois", "Maryland", "Nebraska")
+
+west <- c("Alaska", "Arizona", "California", "Utah", "New Mexico", "Wyoming", "Colorado")
+
+midwest <- c("Iowa", "Kansas", "Montana", "Missouri", "Indiana", "South Dakota")
+
+south <- c("Florida", "Tennessee", "Oklahoma")
+
+retention <- retention %>% filter(correlation > -8, !state_name %in% excl, year >= 1960) 
+retention <- retention %>% mutate(party = ifelse(PartyApptGov %in% c("D", "D-E", "D-EP", "DD"), "D", ifelse(PartyApptGov %in% c("R", "R-E", "R-EM", "RR"), "R", NA)), region = ifelse(state_name %in% midwest, "Midwest", ifelse(state_name %in% south, "South", ifelse(state_name %in% west, "West", NA))))
+```
+
+```{r include=FALSE, eval=TRUE}
+retention_21 <- retention %>% filter(year >= 2000)
+retention_20 <- retention %>% filter(year < 2000)
+
+t.test(retention_21$correlation, retention_20$correlation)
+```
+## Theory and Hypotheses
+
+There are numerous models for state supreme court elections in the U.S.: the Missouri Plan (non-partisan merit commission), gubernatorial appointment, legislative appointment, nonpartisan and partisan elections, and retention elections. All of these systems have their benefits and drawbacks, although some types like partisan elections have been shown to impart more undue influence on judicial decisionmaking than others, as in [Kang and Shepherd (2015)](https://www.jstor.org/stable/10.1086/682690?seq=1). While the Missouri Plan is the most popular selection process for state courts of last resort, many states utilize retention elections (or some variation like Pennsylvania where judges are first elected in a partisan contest and then face subsequent "nonpartisan" retention elections).
+In this research module, I investigate whether or not retention elections have become more partisan since they were first implemented in California in the 1930s. I suspect that recent political polarization has generally saturated retention elections, such that the correlation between retention results and partisan gubernatorial/presidential elections has become stronger in recent decades.
+
+## Data Collection
+
+I use the [State Supreme Court Election Dataset](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/1P1JFG#__sid=js0) developed by Kritzer (2015, updated December 2020) for this analysis. Kritzer's Retention Dataset includes information on all 855 retention elections for state courts of last resort from 1936 to 2020. I restrict the dataset to all elections after 1960 to allow for more state diversity in the analysis (since, prior to 1960, most retention elections were in California), and I exclude states where retention elections are held at the district-level, rather than statewide.
+
+Alongside basic election information, the dataset includes a computed partisan correlation statistic which compares, at the county-level, the "yes" percentage in a retention election against the percentage cast for a Democratic candidate in the concurrent (or most recent) gubernatorial election. Consequently, this variable ranges from 1 (higher county-level votes to retain correlates positively with county-level Democratic vote) to -1 (higher county-level votes to retain correlates negatively with county-level Democratic vote).
+
+The dataset also includes information on a justice's partisan origins using best available information.^[Partisanship is coded using the party of the governor who appointed the justice prior to retention. If previously elected in a partisan election (like in Pennsylvania), the justice's nominating party is used, and if elected in a nonpartisan election, alternative information such as primary candidacies for other elected offices is used to code partisanship.] The variable `ElectionCount` measures how many times a justice has been placed on the ballot prior to the instant election.
+
+## Modeling and Analysis
+
+I hypothesize that retention elections have become more partisan over time, so a basic time-series plot with LOESS smoothing can help confirm whether or not a trend exists in the data.^[Presumably, a more rigorous method is to split the means at some breakpoint and conduct a t-test on the two grouped means, although the results are the same. The mean correlation post-2000 is higher ($p < .001$) than the mean correlation pre-2000.] The correlation coefficient calculated by Kritzer includes directionality (e.g.  Democratic counties voting "yes" and Republican counties voting "no" yields a positive correlation, while Democratic counties voting "no" and Republican counties voting "yes" yields a negative correlation), but this analysis is not (yet) sensitive to the direction of the correlation. Instead, we merely want to see if there exists any correlation--positive or negative--between partisan vote share and retention vote share, so Figure 1 plots the absolute value of the correlation coefficient over time with a smoothed trendline.
+
+```{r, fig.cap = "Time Series of Retention-Partisan Correlation Coefficient"}
+ggplot(retention %>% filter(!is.na(party)), aes(year, abs(correlation))) + geom_point() + geom_smooth()
+```
+We see a clear positive trend that accelerates around 2000 (notably around the time of *Republican Party of Minnesota v. White* where the Supreme Court struck down a state ban on judicial candidates announcing positions during elections on issues that could come before the court). The 2002 *White* decision did not directly affect retention elections--Minnesota does not conduct retention elections--but nonetheless lines up with the turning point in our data. Although research (e.g. [Bonneau, Hall, and Streb](https://www.jstor.org/stable/23268703?seq=1) (2011)) suggests the *White* decision had little effect on election spending and contestation, repeated analysis with newer and more robust datasets can help identify whether this turning point in our data is the result of *White* or just general polarization (or something else).
+
+Grouping our data by the partisanship of the justices, as done in Figure 2, provides no evidence that retention-partisan correlation has increased at significantly different rates. However, grouping by region provides some evidence that retention elections became more polarized in Western states prior to states in the Midwest or South.^[Alaska, Arizona, California, Utah, New Mexico, Wyoming, and Colorado are considered Western; Iowa, Kansas, Montana, Missouri, Indiana, and South Dakota are considered Midwestern; and Florida, Tennessee, and Oklahoma are considered Southern. Pennsylvania does not fit coherently in any of these groups and is thus dropped.] As shown in Figure 3, retention-partisan coefficients have consistently increased in Western states since the 1980s, while the correlations only began increasing in Midwestern and Southern states around 2000. 
+
+```{r, fig.cap = "Time Series of Retention-Partisan Correlation Coefficient by Justice Partisanship"}
+ggplot(retention %>% filter(!is.na(party)), aes(year, abs(correlation), color = party)) + geom_point() + geom_smooth()
+```
+
+```{r fig.cap= "Time Series of Retention-Partisan Correlation Coefficient by Region"}
+ggplot(retention %>% filter(!is.na(party), !is.na(region)), aes(year, abs(correlation), color = region)) + geom_point() + geom_smooth()
+```
+
+
+## Conclusion
+
+In general, retention elections have correlated more closely with partisan election results now than in previous decades. Although correlations appear to differ across various regions, 2000 appears as a national turning point around when retention-partisan correlations began increasing (and have done so for the last 20 years). There are still several variables that could potentially affect the strength of correlations: concurrent partisan elections, campaign spending, and previous decisions. Data on campaign spending for retention elections is rare, but justices are increasingly facing anti-retention efforts (e.g. Justice Kilbride in Illinois who was removed in a $12 million campaign^[https://www.daily-journal.com/news/elections/kilbride-s-retention-race-shatters-spending-records/article_36e76a16-1ae6-11eb-960f-5ff9cb7fa5fe.html]). Many of these retention efforts occur due to judicial decisions (e.g. three justices in Iowa who were defeated in retention efforts for ruling in favor of legalizing same-sex marriage^[https://www.nytimes.com/2010/11/04/us/politics/04judges.html]), so research examining certain decisions on hot-button issues may draw more public attention to justices and their retention issues than people normally give to their high courts.

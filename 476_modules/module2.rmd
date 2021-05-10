@@ -1,0 +1,95 @@
+---
+title: "Research Module 2"
+author: "Taran Samarth"
+date: "March 2nd, 2021"
+output:
+  pdf_document: default
+indent: yes
+fontsize: 11pt
+header-includes:
+- \usepackage{subfig}
+- \usepackage{float}
+subtitle: PLSC 476
+---
+
+```{r setup, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.align = 'center')
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+library(tidyverse)
+library(ggplot2)
+library(haven)
+library(stringr)
+```
+
+```{r}
+scdb <- read.csv("SCDB_justicecentered.csv")
+jdb<-read_xpt("http://epstein.wustl.edu/research/justicesdata.v8xpt")
+
+merged <- merge(scdb,jdb,by.x="justice",by.y="spaethid")
+
+merged <- merged %>% mutate(atty=ifelse(usasat1>999 | usat1>999|usago1>999|usag1>999|citat1>999|cdep1>999|cdis1>999|saag1>999|stag1>999,1,0),direction=direction-1) %>% drop_na(direction)
+
+# Subset criminal procedure and due process cases
+
+crimProcCases <- merged %>% filter(issueArea == 1)
+
+dueProcCases <- merged %>% filter(issueArea == 4)
+
+# Generate crosstabulated percentages for crim. proc. and due proc. cases by prosecutorial experience 
+
+crimProcTable <- prop.table(with(crimProcCases,xtabs(~atty+direction)),1)
+
+dueProcTable <- prop.table(with(dueProcCases,xtabs(~atty+direction)),1)
+```
+
+## Theory and Hypotheses
+
+  The criminal legal system drives most court activity at all levels, and, at some point in their careers, lawyers often work on criminal cases. Experiences as prosecutors and defense lawyers are especially formative on individual outlooks on crime, civil liberties, and systemic fairness. Justices on the Supreme Court are no different--their resumes often feature work as district attorneys, attorneys general, federal attorneys, and other prosecutorial positions. Since prosecutors generally argue for more stringent penalties and restrictions on defendant's rights, I suspect that prosecutorial experiences impart a more conservative outlook on due process and criminal procedure in their legal thinking throughout their careers.
+  
+  Consequently, I expect that Supreme Court justices who previously worked as prosecutors are more likely than justices with no prosecutorial experience to rule against expanding defendant rights in criminal procedure and due process cases.
+
+## Data Sourcing and Manipulation
+
+  I combine two data sources: the Supreme Court Justices Database and the U.S. Supreme Court Judicial Database. The Justices Database provides biographical information about each Supreme Court justice, while the Judicial Database provides information about each case heard before the Court. The Judicial Database's Modern dataset covers cases from the 1946 term onwards, so only justices who served anytime between 1946 and 2019 are included in this analysis.
+  
+  To compile data on prosecutorial experience, I use the Justices Database to identify which Justices previously served in the following positions: U.S. Attorney, Assistant U.S. Attorney, U.S. Attorney General (or employed in the Office of the Attorney General), district or county attorney, assistant district or county attorney, city attorney, state attorney general, and state assistant attorney general. The Justices Database includes variables for the first year in which Justices served in each position (evaluated as 999, if they never served in that office). The independent variable `atty` was then coded as 1 for all Justices who had a non-999 entry for any of those variables were assigned (and coded as 0 otherwise).
+  
+  For the dependent variable, the Judicial Database's `direction` variable is rescaled from [1 (conservative), 2 (liberal)] to a binary dummy variable [0 (conservative), 1 (liberal)]. "Liberal" votes are those cast in favor of defendants, indigents, or parties suing the government over violation of due process. Votes without a coded direction are excluded from the analysis, and the combined dataset is filtered into cases pertaining to criminal procedure (issueArea = 1) and due process (issueArea = 4).
+
+## Analysis
+  Figure 1 shows the composition of the Court since 1946 by prosecutorial experience. More Supreme Court Justices ($n$=38) had some prosecutorial experience upon confirmation than not--60.5% (23 justices) previously worked as prosecutors while 39.5% (15 justices) had never worked as prosecutors.
+```{r message=FALSE, fig.cap="Justices by Prosecutorial Experience", out.width="60%"}
+# Plot of justices with prosecutorial experience
+
+merged %>% group_by(justice,atty) %>% summarise(count=n_distinct(justice)) %>% group_by(atty) %>% summarise(count=n()) %>% ggplot(aes(x=as.factor(atty),y=100*count/sum(count))) + geom_bar(stat="identity") + xlab("Years as Prosecutor") + ylab("Percentage") + scale_x_discrete(labels=c("0","1+"))
+```
+
+  Figure 2 shows the liberal voting percentage on criminal procedure and due process cases for justices with and without prosecutorial experience. In criminal procedure cases, justices who were prosecutors voted, on average, in the conservative direction (40.6% of votes were cast in the liberal direction), while justices without prosecutorial experience voted, on average, in the liberal direction (61.7% of votes were cast in the liberal direction). Both justices with and without prosecutorial experience voted, on average, in the liberal direction in due process cases, albeit at different rates. Justices with prosecutorial experience voted in the liberal direction in 50.8% of due process cases, while justices without prosecutorial experience did the same in 63.8% of due process cases.
+  
+```{r fig.show="hold", figures-side, out.width="50%",fig.cap="Liberal Voting Percentage in SCOTUS Cases by Prosecutorial Experience", fig.subcap=c("Criminal Procedure Cases","Due Process Cases")}
+# Plot of voting direction for criminal procedure and due process cases by prosecutorial experience
+
+data.frame(crimProcTable) %>% filter(direction==1) %>% ggplot(aes(x=atty,y=round(100*Freq))) + geom_bar(stat="identity") + geom_bar(stat="identity") + xlab("Years as Prosecutor") + ylab("Percentage") + scale_x_discrete(labels=c("0","1+"))
+
+data.frame(dueProcTable) %>% filter(direction==1) %>% ggplot(aes(x=atty,y=round(100*Freq))) + geom_bar(stat="identity") + geom_bar(stat="identity") + xlab("Years as Prosecutor") + ylab("Percentage") + scale_x_discrete(labels=c("0","1+"))
+```
+
+  Table 1 shows the results of a chi-squared difference of proportions analysis between the liberal voting percentage (equivalent to the mean voting direction) for justices with and without prosecutorial experience in due process and criminal procedure cases. While the difference between mean voting direction between justices with and without prosecutorial experience is greater in criminal procedure cases than due process cases, justices without prosecutorial experience are statistically significantly more likely to vote in a liberal direction in both types of cases ($p$ < 0.01 for both $\chi^2$ tests).
+
+```{r warning=FALSE}
+# Test for difference in proportions
+
+
+crimProcTest<-prop.test(with(crimProcCases,xtabs(~atty+direction)))
+
+dueProcTest<-prop.test(with(dueProcCases,xtabs(~atty+direction)))
+
+
+# Generate table for liberal voting % for (no) prosecutorial experience, difference in proportions, chi-squared value, and p-value (replacing values less than .01 with a <.01 string)
+knitr::kable(data.frame(c("Criminal Procedure","Due Process"),round(c(crimProcTable[1,2]*100,dueProcTable[1,2]*100),1),round(c(crimProcTable[2,2]*100,dueProcTable[2,2]*100),1),round(c((crimProcTable[1,2]-crimProcTable[2,2])*100,(dueProcTable[1,2]-dueProcTable[2,2])*100),1),round(c(crimProcTest$statistic,dueProcTest$statistic),1),c(ifelse(crimProcTest$p.value<.01,"<.01",crimProcTest$p.value)
+,ifelse(dueProcTest$p.value<.01,"<.01",dueProcTest$p.value))) %>% setNames(c("Case Type","Liberal Voting % (No Prosec. Exp.)", "Liberal Voting % (Prosec. Exp.)", "Diff. in Liberal Voting % (No Exp. - Exp.)","Chi-squared","P-value")),caption="Chi-squared Test for Difference of Proportions")
+```
+
+## Results
+Consistent with our hypothesis, Supreme Court justices with prosecutorial experience are more likely to vote against defendants in criminal procedure and due process cases than justices with no prosecutorial experience. While further analysis should examine possible intervening variables--notably, partisanship and the specific number of years spent as a prosecutor--that may mediate the effect of prosecutorial experience on voting direction in criminal procedure and due process cases, our findings provide evidence that prosecutorial experience is connected to more conservative voting patterns in certain issue areas for Supreme Court justices.
